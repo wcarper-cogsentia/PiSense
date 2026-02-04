@@ -1,0 +1,24 @@
+# Core Raspberry Pi Libraries
+RPi.GPIO>=0.7.1  # GPIO control (only works on actual Raspberry Pi)
+# gpiozero>=2.0  # Simpler GPIO interface (uncomment if preferred)
+
+# Common Sensor Libraries
+# adafruit-circuitpython-dht>=4.0.0  # DHT11/DHT22 temperature/humidity sensors
+# adafruit-circuitpython-bme280>=2.6.0  # BME280 environmental sensor
+# smbus2>=0.4.2  # I2C communication
+
+# Display Libraries
+# Pillow>=10.0.0  # Image processing
+# adafruit-circuitpython-ssd1306>=2.12.0  # OLED displays
+
+# Camera
+# picamera2>=0.3.12  # Camera module support (Raspberry Pi OS Bullseye+)
+
+# Utilities
+python-dotenv>=1.0.0  # Environment variables
+loguru>=0.7.0  # Enhanced logging
+
+# Development tools (optional)
+pytest>=7.4.0
+black>=23.0.0
+ruff>=0.1.0
