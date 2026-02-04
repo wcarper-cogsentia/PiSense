@@ -13,7 +13,8 @@ rpi-lgpio>=0.4  # GPIO backend for Raspberry Pi 5 (required for gpiozero on Pi 5
 # adafruit-circuitpython-ssd1306>=2.12.0  # OLED displays
 
 # Camera
-# picamera2>=0.3.12  # Camera module support (Raspberry Pi OS Bullseye+)
+picamera2>=0.3.12  # Camera module support (Raspberry Pi OS Bookworm+)
+Pillow>=10.0.0  # Image processing for display
 
 # Utilities
 python-dotenv>=1.0.0  # Environment variables
