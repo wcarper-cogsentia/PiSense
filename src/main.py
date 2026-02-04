@@ -138,13 +138,30 @@ def main():
     try:
         # Initialize camera if available
         if CAMERA_AVAILABLE:
-            logger.info("Initializing camera...")
-            camera = Picamera2()
-            camera.configure(camera.create_still_configuration())
-            camera.start()
-            logger.info("Camera ready")
+            try:
+                logger.info("Detecting cameras...")
+                cameras = Picamera2.global_camera_info()
+
+                if not cameras:
+                    logger.warning("No cameras detected - running in GPIO-only mode")
+                    logger.info("Check: 1) Camera is connected, 2) Cable is seated properly")
+                else:
+                    logger.info(f"Found {len(cameras)} camera(s)")
+                    for idx, cam_info in enumerate(cameras):
+                        logger.info(f"  Camera {idx}: {cam_info}")
+
+                    logger.info("Initializing camera 0...")
+                    camera = Picamera2(0)
+                    camera.configure(camera.create_still_configuration())
+                    camera.start()
+                    logger.info("Camera ready")
+
+            except Exception as e:
+                logger.error(f"Failed to initialize camera: {e}")
+                logger.warning("Continuing in GPIO-only mode")
+                camera = None
         else:
-            logger.warning("Camera not available - running in GPIO-only mode")
+            logger.warning("picamera2 not available - running in GPIO-only mode")
 
         # Set up GPIO pin as input with pull-down resistor
         # Change pull_up=True if you're using a pull-up configuration
