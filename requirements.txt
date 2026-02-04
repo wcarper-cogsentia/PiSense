@@ -1,6 +1,6 @@
 # Core Raspberry Pi Libraries
-RPi.GPIO>=0.7.1  # GPIO control (only works on actual Raspberry Pi)
-# gpiozero>=2.0  # Simpler GPIO interface (uncomment if preferred)
+gpiozero>=2.0  # GPIO interface (works with all Raspberry Pi models including Pi 5)
+# RPi.GPIO>=0.7.1  # Legacy GPIO control (has compatibility issues with Pi 5)
 
 # Common Sensor Libraries
 # adafruit-circuitpython-dht>=4.0.0  # DHT11/DHT22 temperature/humidity sensors

@@ -2,11 +2,13 @@
 
 import logging
 import time
+from signal import pause
+
 try:
-    import RPi.GPIO as GPIO
+    from gpiozero import Button
 except ImportError:
-    print("Warning: RPi.GPIO not available. This script must run on a Raspberry Pi.")
-    print("For testing purposes, install RPi.GPIO or use a GPIO simulator.")
+    print("Warning: gpiozero not available. This script must run on a Raspberry Pi.")
+    print("Install with: pip install gpiozero")
     exit(1)
 
 logging.basicConfig(
@@ -17,16 +19,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # GPIO Configuration
-PIN = 20
-BOUNCE_TIME = 200  # milliseconds to debounce
+PIN = 20  # GPIO 20 (Physical pin 38 on Pi 5)
+BOUNCE_TIME = 0.2  # seconds to debounce
 
 
-def gpio_callback(channel):
-    """Callback function when GPIO pin state changes"""
-    state = GPIO.input(channel)
-    state_str = "HIGH" if state else "LOW"
+def on_pressed():
+    """Callback function when GPIO pin goes HIGH"""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] GPIO Pin {channel} changed to {state_str} (value: {state})")
+    print(f"[{timestamp}] GPIO Pin {PIN} changed to HIGH (value: 1)")
+
+
+def on_released():
+    """Callback function when GPIO pin goes LOW"""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] GPIO Pin {PIN} changed to LOW (value: 0)")
 
 
 def main():
@@ -35,26 +41,23 @@ def main():
     logger.info(f"Monitoring GPIO pin {PIN} for state changes")
 
     try:
-        # Set up GPIO mode (BCM numbering)
-        GPIO.setmode(GPIO.BCM)
-
-        # Set up pin as input with pull-down resistor
-        # Change to GPIO.PUD_UP if you're using a pull-up configuration
-        GPIO.setup(PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+        # Set up GPIO pin as input with pull-down resistor
+        # Change pull_up=True if you're using a pull-up configuration
+        button = Button(PIN, pull_up=False, bounce_time=BOUNCE_TIME)
 
         # Read and print initial state
-        initial_state = GPIO.input(PIN)
+        initial_state = button.is_pressed
         initial_state_str = "HIGH" if initial_state else "LOW"
-        print(f"Initial state of GPIO pin {PIN}: {initial_state_str} (value: {initial_state})")
+        print(f"Initial state of GPIO pin {PIN}: {initial_state_str} (value: {int(initial_state)})")
         print(f"Listening for state changes... (Press Ctrl+C to exit)")
         print("-" * 60)
 
-        # Add event detection for both rising and falling edges
-        GPIO.add_event_detect(PIN, GPIO.BOTH, callback=gpio_callback, bouncetime=BOUNCE_TIME)
+        # Set up event handlers
+        button.when_pressed = on_pressed
+        button.when_released = on_released
 
         # Keep the program running
-        while True:
-            time.sleep(0.1)
+        pause()
 
     except KeyboardInterrupt:
         print("\n" + "-" * 60)
@@ -64,9 +67,6 @@ def main():
         logger.error(f"An error occurred: {e}")
 
     finally:
-        # Clean up GPIO on exit
-        GPIO.cleanup()
-        logger.info("GPIO cleanup completed")
         logger.info("PiSense application finished")
 
 
