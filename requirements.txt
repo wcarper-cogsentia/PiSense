@@ -1,5 +1,6 @@
 # Core Raspberry Pi Libraries
 gpiozero>=2.0  # GPIO interface (works with all Raspberry Pi models including Pi 5)
+rpi-lgpio>=0.4  # GPIO backend for Raspberry Pi 5 (required for gpiozero on Pi 5)
 # RPi.GPIO>=0.7.1  # Legacy GPIO control (has compatibility issues with Pi 5)
 
 # Common Sensor Libraries
