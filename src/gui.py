@@ -117,30 +117,30 @@ class PiSenseGUI:
         button_frame = ttk.Frame(left_panel)
         button_frame.pack(fill=tk.X, pady=5)
 
-        # Start/Stop Button
+        # Start/Stop Button - larger for touch
         self.start_button = tk.Button(button_frame, text="Start",
                                       command=self.toggle_monitoring,
                                       bg="#4CAF50", fg="white",
-                                      font=('Arial', 12, 'bold'),
-                                      height=2)
-        self.start_button.pack(fill=tk.X, pady=2)
+                                      font=('Arial', 16, 'bold'),
+                                      height=3)
+        self.start_button.pack(fill=tk.X, pady=3)
 
-        # Manual Capture Button
+        # Manual Capture Button - larger for touch
         self.capture_button = tk.Button(button_frame, text="Capture",
                                        command=self.manual_capture,
                                        bg="#2196F3", fg="white",
-                                       font=('Arial', 12, 'bold'),
-                                       height=2,
+                                       font=('Arial', 16, 'bold'),
+                                       height=3,
                                        state=tk.DISABLED)
-        self.capture_button.pack(fill=tk.X, pady=2)
+        self.capture_button.pack(fill=tk.X, pady=3)
 
-        # Delete Images Button
+        # Delete Images Button - larger for touch
         delete_button = tk.Button(button_frame, text="Delete All",
                                   command=self.delete_all_images,
                                   bg="#f44336", fg="white",
-                                  font=('Arial', 12, 'bold'),
-                                  height=2)
-        delete_button.pack(fill=tk.X, pady=2)
+                                  font=('Arial', 16, 'bold'),
+                                  height=3)
+        delete_button.pack(fill=tk.X, pady=3)
 
         # Right Panel - Image preview (takes most of the space)
         preview_frame = ttk.LabelFrame(main_frame, text="Camera View", padding="5")
