@@ -100,47 +100,61 @@ class PiSenseGUI:
         settings_frame.pack(fill=tk.X, pady=5)
 
         # Debounce time setting (in milliseconds)
-        ttk.Label(settings_frame, text="Debounce (ms):", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(settings_frame, text="Debounce (ms):", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W, pady=3)
         self.debounce_var = tk.IntVar(value=int(BOUNCE_TIME * 1000))
-        debounce_spinbox = ttk.Spinbox(settings_frame, from_=10, to=1000, increment=10,
-                                       textvariable=self.debounce_var, width=8)
-        debounce_spinbox.grid(row=0, column=1, sticky=tk.W, padx=5)
+
+        debounce_control = ttk.Frame(settings_frame)
+        debounce_control.grid(row=0, column=1, sticky=tk.W, padx=5, pady=3)
+
+        tk.Button(debounce_control, text="-", font=('Arial', 14, 'bold'),
+                 width=2, command=lambda: self.adjust_debounce(-10)).pack(side=tk.LEFT, padx=1)
+        ttk.Label(debounce_control, textvariable=self.debounce_var,
+                 font=('Arial', 11, 'bold'), width=5, anchor=tk.CENTER).pack(side=tk.LEFT, padx=3)
+        tk.Button(debounce_control, text="+", font=('Arial', 14, 'bold'),
+                 width=2, command=lambda: self.adjust_debounce(10)).pack(side=tk.LEFT, padx=1)
 
         # Camera cooldown setting (in seconds)
-        ttk.Label(settings_frame, text="Cooldown (s):", font=('Arial', 9)).grid(row=1, column=0, sticky=tk.W)
+        ttk.Label(settings_frame, text="Cooldown (s):", font=('Arial', 9)).grid(row=1, column=0, sticky=tk.W, pady=3)
         self.cooldown_var = tk.DoubleVar(value=CAMERA_COOLDOWN)
-        cooldown_spinbox = ttk.Spinbox(settings_frame, from_=0.5, to=30.0, increment=0.5,
-                                       textvariable=self.cooldown_var, width=8, format="%.1f")
-        cooldown_spinbox.grid(row=1, column=1, sticky=tk.W, padx=5)
+
+        cooldown_control = ttk.Frame(settings_frame)
+        cooldown_control.grid(row=1, column=1, sticky=tk.W, padx=5, pady=3)
+
+        tk.Button(cooldown_control, text="-", font=('Arial', 14, 'bold'),
+                 width=2, command=lambda: self.adjust_cooldown(-0.5)).pack(side=tk.LEFT, padx=1)
+        ttk.Label(cooldown_control, textvariable=self.cooldown_var,
+                 font=('Arial', 11, 'bold'), width=5, anchor=tk.CENTER).pack(side=tk.LEFT, padx=3)
+        tk.Button(cooldown_control, text="+", font=('Arial', 14, 'bold'),
+                 width=2, command=lambda: self.adjust_cooldown(0.5)).pack(side=tk.LEFT, padx=1)
 
         # Control Buttons Frame - Vertical stack
         button_frame = ttk.Frame(left_panel)
         button_frame.pack(fill=tk.X, pady=5)
 
-        # Start/Stop Button - larger for touch
+        # Start/Stop Button
         self.start_button = tk.Button(button_frame, text="Start",
                                       command=self.toggle_monitoring,
                                       bg="#4CAF50", fg="white",
-                                      font=('Arial', 16, 'bold'),
-                                      height=3)
-        self.start_button.pack(fill=tk.X, pady=3)
+                                      font=('Arial', 12, 'bold'),
+                                      height=2)
+        self.start_button.pack(fill=tk.X, pady=2)
 
-        # Manual Capture Button - larger for touch
+        # Manual Capture Button
         self.capture_button = tk.Button(button_frame, text="Capture",
                                        command=self.manual_capture,
                                        bg="#2196F3", fg="white",
-                                       font=('Arial', 16, 'bold'),
-                                       height=3,
+                                       font=('Arial', 12, 'bold'),
+                                       height=2,
                                        state=tk.DISABLED)
-        self.capture_button.pack(fill=tk.X, pady=3)
+        self.capture_button.pack(fill=tk.X, pady=2)
 
-        # Delete Images Button - larger for touch
+        # Delete Images Button
         delete_button = tk.Button(button_frame, text="Delete All",
                                   command=self.delete_all_images,
                                   bg="#f44336", fg="white",
-                                  font=('Arial', 16, 'bold'),
-                                  height=3)
-        delete_button.pack(fill=tk.X, pady=3)
+                                  font=('Arial', 12, 'bold'),
+                                  height=2)
+        delete_button.pack(fill=tk.X, pady=2)
 
         # Right Panel - Image preview (takes most of the space)
         preview_frame = ttk.LabelFrame(main_frame, text="Camera View", padding="5")
@@ -329,6 +343,18 @@ class PiSenseGUI:
 
         except Exception as e:
             logger.error(f"Failed to display image: {e}")
+
+    def adjust_debounce(self, delta):
+        """Adjust debounce value with bounds checking"""
+        current = self.debounce_var.get()
+        new_value = max(10, min(1000, current + delta))
+        self.debounce_var.set(new_value)
+
+    def adjust_cooldown(self, delta):
+        """Adjust cooldown value with bounds checking"""
+        current = self.cooldown_var.get()
+        new_value = max(0.5, min(30.0, current + delta))
+        self.cooldown_var.set(round(new_value, 1))
 
     def update_capture_count(self):
         """Update the count of captured images"""
