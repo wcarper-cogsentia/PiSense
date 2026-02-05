@@ -95,6 +95,16 @@ def capture_image():
         logger.info(f"Capturing image: {filename}")
         camera.capture_file(str(filename))
 
+        # Rotate image 90 degrees clockwise using PIL
+        if DISPLAY_AVAILABLE:
+            try:
+                img = Image.open(filename)
+                img_rotated = img.rotate(-90, expand=True)  # -90 for clockwise rotation
+                img_rotated.save(filename)
+                logger.info("Image rotated 90° clockwise")
+            except Exception as e:
+                logger.warning(f"Failed to rotate image: {e}")
+
         print(f"Image saved: {filename}")
 
         # Display the captured image
@@ -154,13 +164,9 @@ def main():
 
                     logger.info("Initializing camera 0...")
                     camera = Picamera2(0)
-
-                    # Configure camera with 90-degree clockwise rotation
-                    config = camera.create_still_configuration()
-                    config["transform"] = {"hflip": False, "vflip": False, "rotation": 90}
-                    camera.configure(config)
+                    camera.configure(camera.create_still_configuration())
                     camera.start()
-                    logger.info("Camera ready (rotated 90° clockwise)")
+                    logger.info("Camera ready")
 
             except Exception as e:
                 logger.error(f"Failed to initialize camera: {e}")
