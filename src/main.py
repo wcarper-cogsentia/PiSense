@@ -41,9 +41,11 @@ BOUNCE_TIME = 0.1  # seconds to debounce (50ms)
 # Camera Configuration
 IMAGES_DIR = Path("images")
 IMAGES_DIR.mkdir(exist_ok=True)
+CAMERA_COOLDOWN = 3.0  # Minimum seconds between camera captures
 
 # Global camera instance
 camera = None
+last_camera_capture_time = 0
 
 
 def display_image(image_path):
@@ -130,38 +132,38 @@ def on_released():
 
 def main():
     """Main application function"""
-    global camera
+    global camera, last_camera_capture_time
 
     logger.info("PiSense GPIO Monitor starting...")
     logger.info(f"Monitoring GPIO pin {PIN} for state changes")
 
     try:
-        # Camera initialization temporarily disabled
-        # if CAMERA_AVAILABLE:
-        #     try:
-        #         logger.info("Detecting cameras...")
-        #         cameras = Picamera2.global_camera_info()
-        #
-        #         if not cameras:
-        #             logger.warning("No cameras detected - running in GPIO-only mode")
-        #             logger.info("Check: 1) Camera is connected, 2) Cable is seated properly")
-        #         else:
-        #             logger.info(f"Found {len(cameras)} camera(s)")
-        #             for idx, cam_info in enumerate(cameras):
-        #                 logger.info(f"  Camera {idx}: {cam_info}")
-        #
-        #             logger.info("Initializing camera 0...")
-        #             camera = Picamera2(0)
-        #             camera.configure(camera.create_still_configuration())
-        #             camera.start()
-        #             logger.info("Camera ready")
-        #
-        #     except Exception as e:
-        #         logger.error(f"Failed to initialize camera: {e}")
-        #         logger.warning("Continuing in GPIO-only mode")
-        #         camera = None
-        # else:
-        #     logger.warning("picamera2 not available - running in GPIO-only mode")
+        # Initialize camera if available
+        if CAMERA_AVAILABLE:
+            try:
+                logger.info("Detecting cameras...")
+                cameras = Picamera2.global_camera_info()
+
+                if not cameras:
+                    logger.warning("No cameras detected - running in GPIO-only mode")
+                    logger.info("Check: 1) Camera is connected, 2) Cable is seated properly")
+                else:
+                    logger.info(f"Found {len(cameras)} camera(s)")
+                    for idx, cam_info in enumerate(cameras):
+                        logger.info(f"  Camera {idx}: {cam_info}")
+
+                    logger.info("Initializing camera 0...")
+                    camera = Picamera2(0)
+                    camera.configure(camera.create_still_configuration())
+                    camera.start()
+                    logger.info("Camera ready")
+
+            except Exception as e:
+                logger.error(f"Failed to initialize camera: {e}")
+                logger.warning("Continuing in GPIO-only mode")
+                camera = None
+        else:
+            logger.warning("picamera2 not available - running in GPIO-only mode")
 
         # Set up GPIO pin as input with pull-down resistor
         # Using minimal bounce time, we'll handle debouncing manually
@@ -190,7 +192,18 @@ def main():
 
                 if current_state:
                     print(f"[{timestamp}] GPIO Pin {PIN} changed to HIGH (value: 1)")
-                    # Camera capture would go here
+
+                    # Trigger camera if enough time has passed since last capture
+                    if camera is not None:
+                        time_since_last_capture = current_time - last_camera_capture_time
+                        if time_since_last_capture >= CAMERA_COOLDOWN:
+                            image_path = capture_image()
+                            if image_path:
+                                print(f"View image at: {image_path}")
+                                last_camera_capture_time = current_time
+                        else:
+                            remaining_cooldown = CAMERA_COOLDOWN - time_since_last_capture
+                            print(f"Camera on cooldown - {remaining_cooldown:.1f}s remaining")
                 else:
                     print(f"[{timestamp}] GPIO Pin {PIN} changed to LOW (value: 0)")
 
