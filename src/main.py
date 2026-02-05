@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # GPIO Configuration
 PIN = 20  # GPIO 20 (Physical pin 38 on Pi 5)
-BOUNCE_TIME = 1.0  # seconds to debounce (1 second to prevent rapid re-triggering)
+BOUNCE_TIME = 0.1  # seconds to debounce (100ms)
 
 # Camera Configuration
 IMAGES_DIR = Path("images")
