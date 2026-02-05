@@ -164,22 +164,40 @@ def main():
         #     logger.warning("picamera2 not available - running in GPIO-only mode")
 
         # Set up GPIO pin as input with pull-down resistor
-        # Change pull_up=True if you're using a pull-up configuration
-        button = Button(PIN, pull_up=False, bounce_time=BOUNCE_TIME)
+        # Using minimal bounce time, we'll handle debouncing manually
+        button = Button(PIN, pull_up=False, bounce_time=None)
+
+        # Track last state and last trigger time for manual debouncing
+        last_state = button.is_pressed
+        last_trigger_time = 0
+        min_trigger_interval = BOUNCE_TIME  # Minimum time between triggers
 
         # Read and print initial state
-        initial_state = button.is_pressed
-        initial_state_str = "HIGH" if initial_state else "LOW"
-        print(f"Initial state of GPIO pin {PIN}: {initial_state_str} (value: {int(initial_state)})")
+        initial_state_str = "HIGH" if last_state else "LOW"
+        print(f"Initial state of GPIO pin {PIN}: {initial_state_str} (value: {int(last_state)})")
         print(f"Listening for state changes... (Press Ctrl+C to exit)")
+        print(f"Debounce time: {BOUNCE_TIME * 1000}ms")
         print("-" * 60)
 
-        # Set up event handlers
-        button.when_pressed = on_pressed
-        button.when_released = on_released
+        # Manual polling loop for better control
+        while True:
+            current_state = button.is_pressed
+            current_time = time.time()
 
-        # Keep the program running
-        pause()
+            # Check if state has changed AND enough time has passed since last trigger
+            if current_state != last_state and (current_time - last_trigger_time) >= min_trigger_interval:
+                timestamp = time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+                if current_state:
+                    print(f"[{timestamp}] GPIO Pin {PIN} changed to HIGH (value: 1)")
+                    # Camera capture would go here
+                else:
+                    print(f"[{timestamp}] GPIO Pin {PIN} changed to LOW (value: 0)")
+
+                last_state = current_state
+                last_trigger_time = current_time
+
+            time.sleep(0.001)  # 1ms polling interval
 
     except KeyboardInterrupt:
         print("\n" + "-" * 60)
