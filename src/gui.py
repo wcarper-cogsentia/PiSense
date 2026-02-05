@@ -271,10 +271,10 @@ class PiSenseGUI:
             img_rotated = img.rotate(-90, expand=True)
             img_rotated.save(filename)
 
-            # Update UI
-            self.last_capture_var.set(filename.name)
-            self.update_capture_count()
-            self.display_image(filename)
+            # Update UI from main thread using after()
+            self.root.after(0, lambda: self.last_capture_var.set(filename.name))
+            self.root.after(0, self.update_capture_count)
+            self.root.after(0, lambda: self.display_image(filename))
 
             logger.info(f"Image saved: {filename}")
 
