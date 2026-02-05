@@ -53,7 +53,7 @@ def display_image(image_path):
     if not DISPLAY_AVAILABLE:
         logger.warning("Display not available")
         return
-
+ 
     try:
         # Open image with PIL and show it
         img = Image.open(image_path)
@@ -154,9 +154,13 @@ def main():
 
                     logger.info("Initializing camera 0...")
                     camera = Picamera2(0)
-                    camera.configure(camera.create_still_configuration())
+
+                    # Configure camera with 90-degree clockwise rotation
+                    config = camera.create_still_configuration()
+                    config["transform"] = {"hflip": False, "vflip": False, "rotation": 90}
+                    camera.configure(config)
                     camera.start()
-                    logger.info("Camera ready")
+                    logger.info("Camera ready (rotated 90° clockwise)")
 
             except Exception as e:
                 logger.error(f"Failed to initialize camera: {e}")
