@@ -58,79 +58,80 @@ class PiSenseGUI:
         self.setup_gui()
 
     def setup_gui(self):
-        """Setup the GUI layout"""
-        # Main container with padding
-        main_frame = ttk.Frame(self.root, padding="10")
+        """Setup the GUI layout - Horizontal layout for limited vertical space"""
+        # Main container with minimal padding
+        main_frame = ttk.Frame(self.root, padding="5")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
         # Configure grid weights
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
+        main_frame.columnconfigure(1, weight=1)  # Image preview gets most space
+
+        # Left Panel - Controls and Status
+        left_panel = ttk.Frame(main_frame)
+        left_panel.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5)
 
         # Title
-        title = ttk.Label(main_frame, text="PiSense Camera Monitor",
-                         font=('Arial', 20, 'bold'))
-        title.grid(row=0, column=0, columnspan=2, pady=10)
+        title = ttk.Label(left_panel, text="PiSense", font=('Arial', 16, 'bold'))
+        title.pack(pady=5)
 
-        # Status Frame
-        status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
-        status_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
+        # Status Frame - Compact
+        status_frame = ttk.LabelFrame(left_panel, text="Status", padding="5")
+        status_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(status_frame, text="Monitoring:").grid(row=0, column=0, sticky=tk.W)
+        # Status grid - more compact
+        ttk.Label(status_frame, text="Status:", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W)
         status_label = ttk.Label(status_frame, textvariable=self.status_var,
-                                font=('Arial', 12, 'bold'))
-        status_label.grid(row=0, column=1, sticky=tk.W, padx=10)
+                                font=('Arial', 9, 'bold'))
+        status_label.grid(row=0, column=1, sticky=tk.W, padx=5)
 
-        ttk.Label(status_frame, text="GPIO State:").grid(row=1, column=0, sticky=tk.W)
+        ttk.Label(status_frame, text="GPIO:", font=('Arial', 9)).grid(row=1, column=0, sticky=tk.W)
         self.gpio_label = ttk.Label(status_frame, textvariable=self.gpio_state_var,
-                                    font=('Arial', 12, 'bold'))
-        self.gpio_label.grid(row=1, column=1, sticky=tk.W, padx=10)
+                                    font=('Arial', 9, 'bold'))
+        self.gpio_label.grid(row=1, column=1, sticky=tk.W, padx=5)
 
-        ttk.Label(status_frame, text="Images Captured:").grid(row=2, column=0, sticky=tk.W)
+        ttk.Label(status_frame, text="Count:", font=('Arial', 9)).grid(row=2, column=0, sticky=tk.W)
         ttk.Label(status_frame, textvariable=self.capture_count_var,
-                 font=('Arial', 12)).grid(row=2, column=1, sticky=tk.W, padx=10)
+                 font=('Arial', 9)).grid(row=2, column=1, sticky=tk.W, padx=5)
 
-        ttk.Label(status_frame, text="Last Capture:").grid(row=3, column=0, sticky=tk.W)
-        ttk.Label(status_frame, textvariable=self.last_capture_var,
-                 font=('Arial', 10)).grid(row=3, column=1, sticky=tk.W, padx=10)
-
-        # Control Buttons Frame
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=20)
+        # Control Buttons Frame - Vertical stack
+        button_frame = ttk.Frame(left_panel)
+        button_frame.pack(fill=tk.X, pady=10)
 
         # Start/Stop Button
-        self.start_button = tk.Button(button_frame, text="Start Monitoring",
+        self.start_button = tk.Button(button_frame, text="Start",
                                       command=self.toggle_monitoring,
                                       bg="#4CAF50", fg="white",
-                                      font=('Arial', 14, 'bold'),
-                                      width=15, height=2)
-        self.start_button.grid(row=0, column=0, padx=5)
-
-        # Delete Images Button
-        delete_button = tk.Button(button_frame, text="Delete All Images",
-                                  command=self.delete_all_images,
-                                  bg="#f44336", fg="white",
-                                  font=('Arial', 14, 'bold'),
-                                  width=15, height=2)
-        delete_button.grid(row=0, column=1, padx=5)
+                                      font=('Arial', 12, 'bold'),
+                                      height=2)
+        self.start_button.pack(fill=tk.X, pady=2)
 
         # Manual Capture Button
-        self.capture_button = tk.Button(button_frame, text="Manual Capture",
+        self.capture_button = tk.Button(button_frame, text="Capture",
                                        command=self.manual_capture,
                                        bg="#2196F3", fg="white",
-                                       font=('Arial', 14, 'bold'),
-                                       width=15, height=2,
+                                       font=('Arial', 12, 'bold'),
+                                       height=2,
                                        state=tk.DISABLED)
-        self.capture_button.grid(row=0, column=2, padx=5)
+        self.capture_button.pack(fill=tk.X, pady=2)
 
-        # Image preview area
-        preview_frame = ttk.LabelFrame(main_frame, text="Last Captured Image", padding="10")
-        preview_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
-        main_frame.rowconfigure(3, weight=1)
+        # Delete Images Button
+        delete_button = tk.Button(button_frame, text="Delete All",
+                                  command=self.delete_all_images,
+                                  bg="#f44336", fg="white",
+                                  font=('Arial', 12, 'bold'),
+                                  height=2)
+        delete_button.pack(fill=tk.X, pady=2)
 
-        self.image_label = ttk.Label(preview_frame, text="No image captured yet",
-                                     relief=tk.SUNKEN, anchor=tk.CENTER)
+        # Right Panel - Image preview (takes most of the space)
+        preview_frame = ttk.LabelFrame(main_frame, text="Camera View", padding="5")
+        preview_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5)
+        main_frame.rowconfigure(0, weight=1)
+
+        self.image_label = ttk.Label(preview_frame, text="No image",
+                                     relief=tk.SUNKEN, anchor=tk.CENTER,
+                                     background="black", foreground="white")
         self.image_label.pack(fill=tk.BOTH, expand=True)
 
         # Update capture count on startup
@@ -172,7 +173,7 @@ class PiSenseGUI:
             self.monitoring = True
             self.stop_monitoring_flag = False
             self.status_var.set("Running")
-            self.start_button.config(text="Stop Monitoring", bg="#f44336")
+            self.start_button.config(text="Stop", bg="#f44336")
             self.capture_button.config(state=tk.NORMAL)
 
             # Start monitoring thread
@@ -190,7 +191,7 @@ class PiSenseGUI:
         self.monitoring = False
         self.stop_monitoring_flag = True
         self.status_var.set("Stopped")
-        self.start_button.config(text="Start Monitoring", bg="#4CAF50")
+        self.start_button.config(text="Start", bg="#4CAF50")
         self.capture_button.config(state=tk.DISABLED)
 
         # Clean up camera
@@ -292,15 +293,16 @@ class PiSenseGUI:
             img = Image.open(image_path)
 
             # Resize to fit preview area (maintain aspect ratio)
-            max_width = 760
-            max_height = 200
+            # Larger area since we have horizontal layout
+            max_width = 580
+            max_height = 440
             img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
 
             # Convert to PhotoImage
             photo = ImageTk.PhotoImage(img)
 
             # Update label
-            self.image_label.config(image=photo, text="")
+            self.image_label.config(image=photo, text="", background="black")
             self.image_label.image = photo  # Keep a reference
 
         except Exception as e:
