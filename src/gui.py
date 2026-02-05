@@ -95,9 +95,27 @@ class PiSenseGUI:
         ttk.Label(status_frame, textvariable=self.capture_count_var,
                  font=('Arial', 9)).grid(row=2, column=1, sticky=tk.W, padx=5)
 
+        # Settings Frame - Adjustable parameters
+        settings_frame = ttk.LabelFrame(left_panel, text="Settings", padding="5")
+        settings_frame.pack(fill=tk.X, pady=5)
+
+        # Debounce time setting (in milliseconds)
+        ttk.Label(settings_frame, text="Debounce (ms):", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W)
+        self.debounce_var = tk.IntVar(value=int(BOUNCE_TIME * 1000))
+        debounce_spinbox = ttk.Spinbox(settings_frame, from_=10, to=1000, increment=10,
+                                       textvariable=self.debounce_var, width=8)
+        debounce_spinbox.grid(row=0, column=1, sticky=tk.W, padx=5)
+
+        # Camera cooldown setting (in seconds)
+        ttk.Label(settings_frame, text="Cooldown (s):", font=('Arial', 9)).grid(row=1, column=0, sticky=tk.W)
+        self.cooldown_var = tk.DoubleVar(value=CAMERA_COOLDOWN)
+        cooldown_spinbox = ttk.Spinbox(settings_frame, from_=0.5, to=30.0, increment=0.5,
+                                       textvariable=self.cooldown_var, width=8, format="%.1f")
+        cooldown_spinbox.grid(row=1, column=1, sticky=tk.W, padx=5)
+
         # Control Buttons Frame - Vertical stack
         button_frame = ttk.Frame(left_panel)
-        button_frame.pack(fill=tk.X, pady=10)
+        button_frame.pack(fill=tk.X, pady=5)
 
         # Start/Stop Button
         self.start_button = tk.Button(button_frame, text="Start",
@@ -226,8 +244,12 @@ class PiSenseGUI:
                 else:
                     self.gpio_label.config(foreground="red")
 
+                # Get current settings from UI
+                debounce_time = self.debounce_var.get() / 1000.0  # Convert ms to seconds
+                camera_cooldown = self.cooldown_var.get()
+
                 # Check for state change with debouncing
-                if current_state != last_state and (current_time - last_trigger_time) >= BOUNCE_TIME:
+                if current_state != last_state and (current_time - last_trigger_time) >= debounce_time:
                     timestamp = time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
                     if current_state:
@@ -236,11 +258,11 @@ class PiSenseGUI:
                         # Trigger camera if enough time has passed
                         if self.camera:
                             time_since_last_capture = current_time - self.last_camera_capture_time
-                            if time_since_last_capture >= CAMERA_COOLDOWN:
+                            if time_since_last_capture >= camera_cooldown:
                                 self.capture_image()
                                 self.last_camera_capture_time = current_time
                             else:
-                                remaining = CAMERA_COOLDOWN - time_since_last_capture
+                                remaining = camera_cooldown - time_since_last_capture
                                 logger.info(f"Camera on cooldown - {remaining:.1f}s remaining")
                     else:
                         logger.info(f"GPIO Pin {PIN} changed to LOW")
