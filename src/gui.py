@@ -7,6 +7,8 @@ import time
 import logging
 from pathlib import Path
 from PIL import Image, ImageTk
+from queue import Queue
+import numpy as np
 
 try:
     from gpiozero import Button as GPIOButton
@@ -16,6 +18,8 @@ except ImportError:
 
 try:
     from picamera2 import Picamera2
+    from picamera2.encoders import H264Encoder
+    from picamera2.outputs import FileOutput
     CAMERA_AVAILABLE = True
 except ImportError:
     CAMERA_AVAILABLE = False
@@ -23,9 +27,10 @@ except ImportError:
 # Configuration
 PIN = 20  # GPIO 20 (Physical pin 38 on Pi 5)
 BOUNCE_TIME = 0.1  # seconds to debounce
-IMAGES_DIR = Path("images")
-IMAGES_DIR.mkdir(exist_ok=True)
-CAMERA_COOLDOWN = 3.0  # Minimum seconds between camera captures
+VIDEOS_DIR = Path("videos")
+VIDEOS_DIR.mkdir(exist_ok=True)
+RECORDING_DURATION = 60.0  # Base recording duration in seconds (1 minute)
+MAX_RECORDING_DURATION = 300.0  # Maximum recording duration in seconds (5 minutes)
 
 # Setup logging
 logging.basicConfig(
@@ -38,22 +43,31 @@ logger = logging.getLogger(__name__)
 class PiSenseGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("PiSense - GPIO Camera Monitor")
+        self.root.title("PiSense - GPIO Video Monitor")
         self.root.geometry("800x480")  # 7" touchscreen resolution
 
         # State variables
         self.monitoring = False
         self.camera = None
         self.gpio_button = None
-        self.last_camera_capture_time = 0
         self.monitor_thread = None
         self.stop_monitoring_flag = False
+
+        # Video recording state
+        self.recording = False
+        self.recording_start_time = 0
+        self.recording_end_time = 0
+        self.trigger_queue = Queue()
+        self.current_video_file = None
+        self.encoder = None
+        self.preview_update_thread = None
 
         # GUI variables
         self.status_var = tk.StringVar(value="Stopped")
         self.gpio_state_var = tk.StringVar(value="LOW")
         self.capture_count_var = tk.StringVar(value="0")
-        self.last_capture_var = tk.StringVar(value="None")
+        self.recording_time_var = tk.StringVar(value="0:00")
+        self.queued_triggers_var = tk.StringVar(value="0")
 
         self.setup_gui()
 
@@ -91,9 +105,18 @@ class PiSenseGUI:
                                     font=('Arial', 9, 'bold'))
         self.gpio_label.grid(row=1, column=1, sticky=tk.W, padx=5)
 
-        ttk.Label(status_frame, text="Count:", font=('Arial', 9)).grid(row=2, column=0, sticky=tk.W)
+        ttk.Label(status_frame, text="Videos:", font=('Arial', 9)).grid(row=2, column=0, sticky=tk.W)
         ttk.Label(status_frame, textvariable=self.capture_count_var,
                  font=('Arial', 9)).grid(row=2, column=1, sticky=tk.W, padx=5)
+
+        ttk.Label(status_frame, text="Recording:", font=('Arial', 9)).grid(row=3, column=0, sticky=tk.W)
+        self.recording_label = ttk.Label(status_frame, textvariable=self.recording_time_var,
+                                        font=('Arial', 9, 'bold'), foreground="red")
+        self.recording_label.grid(row=3, column=1, sticky=tk.W, padx=5)
+
+        ttk.Label(status_frame, text="Queued:", font=('Arial', 9)).grid(row=4, column=0, sticky=tk.W)
+        ttk.Label(status_frame, textvariable=self.queued_triggers_var,
+                 font=('Arial', 9)).grid(row=4, column=1, sticky=tk.W, padx=5)
 
         # Settings Frame - Adjustable parameters
         settings_frame = ttk.LabelFrame(left_panel, text="Settings", padding="5")
@@ -113,19 +136,19 @@ class PiSenseGUI:
         tk.Button(debounce_control, text="+", font=('Arial', 14, 'bold'),
                  width=2, command=lambda: self.adjust_debounce(10)).pack(side=tk.LEFT, padx=1)
 
-        # Camera cooldown setting (in seconds)
-        ttk.Label(settings_frame, text="Cooldown (s):", font=('Arial', 9)).grid(row=1, column=0, sticky=tk.W, pady=3)
-        self.cooldown_var = tk.DoubleVar(value=CAMERA_COOLDOWN)
+        # Max recording time setting (in minutes)
+        ttk.Label(settings_frame, text="Max Rec (min):", font=('Arial', 9)).grid(row=1, column=0, sticky=tk.W, pady=3)
+        self.max_recording_var = tk.IntVar(value=int(MAX_RECORDING_DURATION / 60))
 
-        cooldown_control = ttk.Frame(settings_frame)
-        cooldown_control.grid(row=1, column=1, sticky=tk.W, padx=5, pady=3)
+        max_rec_control = ttk.Frame(settings_frame)
+        max_rec_control.grid(row=1, column=1, sticky=tk.W, padx=5, pady=3)
 
-        tk.Button(cooldown_control, text="-", font=('Arial', 14, 'bold'),
-                 width=2, command=lambda: self.adjust_cooldown(-0.5)).pack(side=tk.LEFT, padx=1)
-        ttk.Label(cooldown_control, textvariable=self.cooldown_var,
+        tk.Button(max_rec_control, text="-", font=('Arial', 14, 'bold'),
+                 width=2, command=lambda: self.adjust_max_recording(-1)).pack(side=tk.LEFT, padx=1)
+        ttk.Label(max_rec_control, textvariable=self.max_recording_var,
                  font=('Arial', 11, 'bold'), width=5, anchor=tk.CENTER).pack(side=tk.LEFT, padx=3)
-        tk.Button(cooldown_control, text="+", font=('Arial', 14, 'bold'),
-                 width=2, command=lambda: self.adjust_cooldown(0.5)).pack(side=tk.LEFT, padx=1)
+        tk.Button(max_rec_control, text="+", font=('Arial', 14, 'bold'),
+                 width=2, command=lambda: self.adjust_max_recording(1)).pack(side=tk.LEFT, padx=1)
 
         # Control Buttons Frame - Vertical stack
         button_frame = ttk.Frame(left_panel)
@@ -139,9 +162,9 @@ class PiSenseGUI:
                                       height=2)
         self.start_button.pack(fill=tk.X, pady=2)
 
-        # Manual Capture Button
-        self.capture_button = tk.Button(button_frame, text="Capture",
-                                       command=self.manual_capture,
+        # Manual Record Button
+        self.capture_button = tk.Button(button_frame, text="Record Video",
+                                       command=self.manual_record,
                                        bg="#2196F3", fg="white",
                                        font=('Arial', 12, 'bold'),
                                        height=2,
@@ -186,9 +209,15 @@ class PiSenseGUI:
 
                 if cameras:
                     self.camera = Picamera2(0)
-                    self.camera.configure(self.camera.create_still_configuration())
+                    # Configure for 640x640 video (YOLO optimized)
+                    video_config = self.camera.create_video_configuration(
+                        main={"size": (640, 640), "format": "RGB888"},
+                        lores={"size": (640, 480)},  # For preview
+                        encode="main"
+                    )
+                    self.camera.configure(video_config)
                     self.camera.start()
-                    logger.info("Camera ready")
+                    logger.info("Camera ready for video recording (640x640)")
                 else:
                     messagebox.showwarning("Camera Warning",
                                          "No camera detected. Running in GPIO-only mode.")
@@ -208,9 +237,17 @@ class PiSenseGUI:
             self.start_button.config(text="Stop", bg="#f44336")
             self.capture_button.config(state=tk.NORMAL)
 
+            # Clear trigger queue
+            while not self.trigger_queue.empty():
+                self.trigger_queue.get()
+
             # Start monitoring thread
             self.monitor_thread = threading.Thread(target=self.monitor_loop, daemon=True)
             self.monitor_thread.start()
+
+            # Start preview update thread
+            self.preview_update_thread = threading.Thread(target=self.update_preview_loop, daemon=True)
+            self.preview_update_thread.start()
 
             logger.info("Monitoring started")
 
@@ -225,6 +262,10 @@ class PiSenseGUI:
         self.status_var.set("Stopped")
         self.start_button.config(text="Start", bg="#4CAF50")
         self.capture_button.config(state=tk.DISABLED)
+
+        # Stop any ongoing recording
+        if self.recording:
+            self.stop_recording()
 
         # Clean up camera
         if self.camera:
@@ -260,80 +301,186 @@ class PiSenseGUI:
 
                 # Get current settings from UI
                 debounce_time = self.debounce_var.get() / 1000.0  # Convert ms to seconds
-                camera_cooldown = self.cooldown_var.get()
 
                 # Check for state change with debouncing
                 if current_state != last_state and (current_time - last_trigger_time) >= debounce_time:
-                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
                     if current_state:
-                        logger.info(f"GPIO Pin {PIN} changed to HIGH")
+                        logger.info(f"GPIO Pin {PIN} changed to HIGH - Trigger detected")
 
-                        # Trigger camera if enough time has passed
+                        # Add trigger to queue
                         if self.camera:
-                            time_since_last_capture = current_time - self.last_camera_capture_time
-                            if time_since_last_capture >= camera_cooldown:
-                                self.capture_image()
-                                self.last_camera_capture_time = current_time
+                            self.trigger_queue.put(current_time)
+                            self.root.after(0, lambda: self.queued_triggers_var.set(str(self.trigger_queue.qsize())))
+
+                            # Start recording if not already recording
+                            if not self.recording:
+                                threading.Thread(target=self.start_recording, daemon=True).start()
                             else:
-                                remaining = camera_cooldown - time_since_last_capture
-                                logger.info(f"Camera on cooldown - {remaining:.1f}s remaining")
+                                # Extend recording time
+                                self.extend_recording()
                     else:
                         logger.info(f"GPIO Pin {PIN} changed to LOW")
 
                     last_state = current_state
                     last_trigger_time = current_time
 
-                time.sleep(0.001)  # 1ms polling interval
+                # Update recording timer
+                if self.recording:
+                    elapsed = current_time - self.recording_start_time
+                    remaining = max(0, self.recording_end_time - current_time)
+                    mins = int(elapsed // 60)
+                    secs = int(elapsed % 60)
+                    self.root.after(0, lambda: self.recording_time_var.set(f"{mins}:{secs:02d}"))
+
+                    # Check if recording should stop
+                    if current_time >= self.recording_end_time:
+                        self.stop_recording()
+
+                time.sleep(0.01)  # 10ms polling interval
 
             except Exception as e:
                 logger.error(f"Error in monitor loop: {e}")
                 break
 
-    def capture_image(self):
-        """Capture image from camera"""
-        if not self.camera:
+    def start_recording(self):
+        """Start video recording"""
+        if not self.camera or self.recording:
             return
 
         try:
+            # Process queue - get first trigger
+            if not self.trigger_queue.empty():
+                self.trigger_queue.get()
+                self.root.after(0, lambda: self.queued_triggers_var.set(str(self.trigger_queue.qsize())))
+
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            filename = IMAGES_DIR / f"capture_{timestamp}.jpg"
+            self.current_video_file = VIDEOS_DIR / f"video_{timestamp}.h264"
 
-            logger.info(f"Capturing image: {filename}")
-            self.camera.capture_file(str(filename))
+            logger.info(f"Starting video recording: {self.current_video_file}")
 
-            # Rotate image 90 degrees clockwise
-            img = Image.open(filename)
-            img_rotated = img.rotate(-90, expand=True)
-            img_rotated.save(filename)
+            # Configure encoder
+            self.encoder = H264Encoder(bitrate=10000000)
 
-            # Update UI from main thread using after()
-            self.root.after(0, lambda: self.last_capture_var.set(filename.name))
-            self.root.after(0, self.update_capture_count)
-            self.root.after(0, lambda: self.display_image(filename))
+            # Start recording
+            self.camera.start_recording(self.encoder, str(self.current_video_file))
 
-            logger.info(f"Image saved: {filename}")
+            # Set recording state
+            self.recording = True
+            self.recording_start_time = time.time()
+            self.recording_end_time = self.recording_start_time + RECORDING_DURATION
+
+            logger.info(f"Recording started - duration: {RECORDING_DURATION}s")
 
         except Exception as e:
-            logger.error(f"Failed to capture image: {e}")
+            logger.error(f"Failed to start recording: {e}")
+            self.recording = False
 
-    def manual_capture(self):
-        """Manually trigger a camera capture"""
-        if self.camera and self.monitoring:
-            self.capture_image()
-            self.last_camera_capture_time = time.time()
+    def extend_recording(self):
+        """Extend recording time by processing trigger from queue"""
+        if not self.recording:
+            return
 
-    def display_image(self, image_path):
-        """Display captured image in preview area"""
         try:
-            img = Image.open(image_path)
+            # Process trigger from queue
+            if not self.trigger_queue.empty():
+                self.trigger_queue.get()
+                self.root.after(0, lambda: self.queued_triggers_var.set(str(self.trigger_queue.qsize())))
 
-            # Resize to fit preview area (maintain aspect ratio)
-            # Larger area since we have horizontal layout
-            max_width = 580
-            max_height = 440
-            img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+            # Add 1 minute to recording time
+            new_end_time = self.recording_end_time + RECORDING_DURATION
 
+            # Check max recording duration
+            max_duration = self.max_recording_var.get() * 60  # Convert minutes to seconds
+            max_end_time = self.recording_start_time + max_duration
+
+            if new_end_time <= max_end_time:
+                self.recording_end_time = new_end_time
+                elapsed = time.time() - self.recording_start_time
+                logger.info(f"Recording extended - new duration: {self.recording_end_time - self.recording_start_time:.1f}s (elapsed: {elapsed:.1f}s)")
+            else:
+                self.recording_end_time = max_end_time
+                logger.info(f"Recording extended to maximum duration: {max_duration}s")
+
+        except Exception as e:
+            logger.error(f"Failed to extend recording: {e}")
+
+    def stop_recording(self):
+        """Stop video recording"""
+        if not self.recording:
+            return
+
+        try:
+            logger.info("Stopping video recording")
+            self.camera.stop_recording()
+
+            self.recording = False
+            self.recording_start_time = 0
+            self.recording_end_time = 0
+
+            # Clear remaining triggers in queue
+            while not self.trigger_queue.empty():
+                self.trigger_queue.get()
+
+            self.root.after(0, lambda: self.recording_time_var.set("0:00"))
+            self.root.after(0, lambda: self.queued_triggers_var.set("0"))
+            self.root.after(0, self.update_capture_count)
+
+            logger.info(f"Recording saved: {self.current_video_file}")
+
+        except Exception as e:
+            logger.error(f"Failed to stop recording: {e}")
+
+    def manual_record(self):
+        """Manually trigger a 1-minute video recording"""
+        if self.camera and self.monitoring:
+            current_time = time.time()
+            self.trigger_queue.put(current_time)
+            self.root.after(0, lambda: self.queued_triggers_var.set(str(self.trigger_queue.qsize())))
+
+            if not self.recording:
+                threading.Thread(target=self.start_recording, daemon=True).start()
+            else:
+                self.extend_recording()
+
+    def update_preview_loop(self):
+        """Update live camera preview (runs in separate thread)"""
+        while not self.stop_monitoring_flag:
+            try:
+                if self.camera and self.monitoring:
+                    # Capture preview frame
+                    frame = self.camera.capture_array()
+
+                    # Convert to PIL Image
+                    img = Image.fromarray(frame)
+
+                    # Rotate 90 degrees clockwise
+                    img = img.rotate(-90, expand=True)
+
+                    # Resize to fit preview area
+                    max_width = 580
+                    max_height = 440
+                    img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+
+                    # Add recording indicator if recording
+                    if self.recording:
+                        # Add red border or dot to indicate recording
+                        from PIL import ImageDraw
+                        draw = ImageDraw.Draw(img)
+                        # Draw red circle in top-right corner
+                        draw.ellipse([img.width - 30, 10, img.width - 10, 30], fill='red')
+
+                    # Update preview on main thread
+                    self.root.after(0, lambda i=img: self.display_preview(i))
+
+                time.sleep(0.1)  # Update preview at ~10 fps
+
+            except Exception as e:
+                logger.error(f"Error in preview loop: {e}")
+                time.sleep(0.5)
+
+    def display_preview(self, img):
+        """Display preview image in GUI (must be called from main thread)"""
+        try:
             # Convert to PhotoImage
             photo = ImageTk.PhotoImage(img)
 
@@ -342,7 +489,7 @@ class PiSenseGUI:
             self.image_label.image = photo  # Keep a reference
 
         except Exception as e:
-            logger.error(f"Failed to display image: {e}")
+            logger.error(f"Failed to display preview: {e}")
 
     def adjust_debounce(self, delta):
         """Adjust debounce value with bounds checking"""
@@ -350,44 +497,49 @@ class PiSenseGUI:
         new_value = max(10, min(1000, current + delta))
         self.debounce_var.set(new_value)
 
-    def adjust_cooldown(self, delta):
-        """Adjust cooldown value with bounds checking"""
-        current = self.cooldown_var.get()
-        new_value = max(0.5, min(30.0, current + delta))
-        self.cooldown_var.set(round(new_value, 1))
+    def adjust_max_recording(self, delta):
+        """Adjust max recording time with bounds checking"""
+        current = self.max_recording_var.get()
+        new_value = max(1, min(30, current + delta))  # 1-30 minutes
+        self.max_recording_var.set(new_value)
 
     def update_capture_count(self):
-        """Update the count of captured images"""
+        """Update the count of captured videos"""
         try:
-            image_files = list(IMAGES_DIR.glob("capture_*.jpg"))
-            count = len(image_files)
+            video_files = list(VIDEOS_DIR.glob("video_*.h264"))
+            count = len(video_files)
             self.capture_count_var.set(str(count))
         except Exception as e:
             logger.error(f"Failed to update capture count: {e}")
 
     def delete_all_images(self):
-        """Delete all images in the images directory"""
+        """Delete all videos and images"""
         result = messagebox.askyesno("Confirm Delete",
-                                     "Are you sure you want to delete all captured images?")
+                                     "Are you sure you want to delete all captured videos and images?")
         if result:
             try:
-                image_files = list(IMAGES_DIR.glob("capture_*.jpg"))
-                count = 0
+                # Delete videos
+                video_files = list(VIDEOS_DIR.glob("video_*.h264"))
+                video_count = 0
+                for video_file in video_files:
+                    video_file.unlink()
+                    video_count += 1
+
+                # Delete any remaining images (if any exist)
+                image_files = list(VIDEOS_DIR.glob("capture_*.jpg"))
+                image_count = 0
                 for img_file in image_files:
                     img_file.unlink()
-                    count += 1
+                    image_count += 1
 
-                # Clear preview
-                self.image_label.config(image="", text="No image captured yet")
-                self.last_capture_var.set("None")
                 self.update_capture_count()
 
-                messagebox.showinfo("Success", f"Deleted {count} images")
-                logger.info(f"Deleted {count} images")
+                messagebox.showinfo("Success", f"Deleted {video_count} videos and {image_count} images")
+                logger.info(f"Deleted {video_count} videos and {image_count} images")
 
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to delete images: {e}")
-                logger.error(f"Failed to delete images: {e}")
+                messagebox.showerror("Error", f"Failed to delete files: {e}")
+                logger.error(f"Failed to delete files: {e}")
 
     def on_closing(self):
         """Handle window closing"""
