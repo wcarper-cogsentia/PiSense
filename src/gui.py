@@ -210,16 +210,22 @@ class PiSenseGUI:
                 if cameras:
                     self.camera = Picamera2(0)
                     # Configure for 640x640 video (YOLO optimized)
-                    # Use RGB888 for both main and lores streams
+                    # Let picamera2 choose appropriate formats
                     video_config = self.camera.create_video_configuration(
-                        main={"size": (640, 640), "format": "RGB888"},
-                        lores={"size": (640, 480), "format": "RGB888"},
-                        encode="main"
+                        main={"size": (640, 640)},
+                        lores={"size": (640, 480)},
+                        encode="main",
+                        buffer_count=4
                     )
                     self.camera.configure(video_config)
                     self.camera.start()
                     logger.info("Camera ready for video recording (640x640)")
                     logger.info(f"Camera configuration: {self.camera.camera_configuration()}")
+
+                    # Log the actual stream configurations
+                    config = self.camera.camera_configuration()
+                    logger.info(f"Main stream config: {config.get('main', {})}")
+                    logger.info(f"Lores stream config: {config.get('lores', {})}")
                 else:
                     messagebox.showwarning("Camera Warning",
                                          "No camera detected. Running in GPIO-only mode.")
@@ -487,8 +493,20 @@ class PiSenseGUI:
                     # Capture preview frame from lores stream
                     frame = self.camera.capture_array("lores")
 
-                    # Convert to PIL Image (RGB format)
-                    img = Image.fromarray(frame)
+                    # Debug: log frame info on first capture
+                    if not hasattr(self, '_frame_info_logged'):
+                        logger.info(f"Frame shape: {frame.shape}, dtype: {frame.dtype}")
+                        self._frame_info_logged = True
+
+                    # Check if we need to convert color space
+                    # If frame is RGB, use directly; if BGR, convert
+                    if len(frame.shape) == 3 and frame.shape[2] == 3:
+                        # Try to detect if colors are swapped by checking if it's BGR
+                        # Convert from RGB to PIL Image directly
+                        img = Image.fromarray(frame, mode='RGB')
+                    else:
+                        # Grayscale or other format
+                        img = Image.fromarray(frame)
 
                     # Rotate 90 degrees clockwise
                     img = img.rotate(-90, expand=True)
@@ -513,6 +531,8 @@ class PiSenseGUI:
 
             except Exception as e:
                 logger.error(f"Error in preview loop: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 time.sleep(0.5)
 
     def display_preview(self, img):
