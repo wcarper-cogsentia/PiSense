@@ -275,6 +275,15 @@ class PiSenseGUI:
         if self.recording:
             self.stop_recording()
 
+        # Clean up GPIO
+        if self.gpio_button:
+            try:
+                self.gpio_button.close()
+                self.gpio_button = None
+                logger.info("GPIO released")
+            except Exception as e:
+                logger.error(f"Error releasing GPIO: {e}")
+
         # Clean up camera
         if self.camera:
             try:
@@ -289,11 +298,15 @@ class PiSenseGUI:
 
     def monitor_loop(self):
         """Main monitoring loop (runs in separate thread)"""
+        if not self.gpio_button:
+            return
         last_state = self.gpio_button.is_pressed
         last_trigger_time = 0
 
         while not self.stop_monitoring_flag:
             try:
+                if not self.gpio_button:
+                    break
                 current_state = self.gpio_button.is_pressed
                 current_time = time.time()
 
