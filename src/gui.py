@@ -210,10 +210,10 @@ class PiSenseGUI:
                 if cameras:
                     self.camera = Picamera2(0)
                     # Configure for 640x640 video (YOLO optimized)
-                    # Using BGR888 format for correct color representation
+                    # Main stream for recording, lores for preview
                     video_config = self.camera.create_video_configuration(
-                        main={"size": (640, 640), "format": "BGR888"},
-                        lores={"size": (640, 480), "format": "BGR888"},  # For preview
+                        main={"size": (640, 640)},
+                        lores={"size": (640, 480)},
                         encode="main"
                     )
                     self.camera.configure(video_config)
@@ -327,16 +327,17 @@ class PiSenseGUI:
                     last_state = current_state
                     last_trigger_time = current_time
 
-                # Update recording timer
+                # Update recording timer and check if should stop
                 if self.recording:
                     elapsed = current_time - self.recording_start_time
                     remaining = max(0, self.recording_end_time - current_time)
                     mins = int(elapsed // 60)
                     secs = int(elapsed % 60)
-                    self.root.after(0, lambda: self.recording_time_var.set(f"{mins}:{secs:02d}"))
+                    self.root.after(0, lambda m=mins, s=secs: self.recording_time_var.set(f"{m}:{s:02d}"))
 
                     # Check if recording should stop
                     if current_time >= self.recording_end_time:
+                        logger.info(f"Recording time expired - stopping (elapsed: {elapsed:.1f}s)")
                         self.stop_recording()
 
                 time.sleep(0.01)  # 10ms polling interval
@@ -374,7 +375,7 @@ class PiSenseGUI:
             self.recording_start_time = time.time()
             self.recording_end_time = self.recording_start_time + RECORDING_DURATION
 
-            logger.info(f"Recording started - duration: {RECORDING_DURATION}s")
+            logger.info(f"Recording started - duration: {RECORDING_DURATION}s, will end at: {time.strftime('%H:%M:%S', time.localtime(self.recording_end_time))}")
 
         except Exception as e:
             logger.error(f"Failed to start recording: {e}")
@@ -460,14 +461,11 @@ class PiSenseGUI:
         while not self.stop_monitoring_flag:
             try:
                 if self.camera and self.monitoring:
-                    # Capture preview frame
-                    frame = self.camera.capture_array()
+                    # Capture preview frame from lores stream
+                    frame = self.camera.capture_array("lores")
 
-                    # Convert BGR to RGB for PIL
-                    frame_rgb = frame[:, :, ::-1]  # Reverse the color channels (BGR -> RGB)
-
-                    # Convert to PIL Image
-                    img = Image.fromarray(frame_rgb)
+                    # Convert to PIL Image (RGB format)
+                    img = Image.fromarray(frame)
 
                     # Rotate 90 degrees clockwise
                     img = img.rotate(-90, expand=True)
