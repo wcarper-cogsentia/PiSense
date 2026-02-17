@@ -487,6 +487,8 @@ class PiSenseGUI:
 
     def update_preview_loop(self):
         """Update live camera preview (runs in separate thread)"""
+        import cv2  # Import here to avoid issues if not available
+
         while not self.stop_monitoring_flag:
             try:
                 if self.camera and self.monitoring:
@@ -498,20 +500,25 @@ class PiSenseGUI:
                         logger.info(f"Frame shape: {frame.shape}, dtype: {frame.dtype}")
                         self._frame_info_logged = True
 
-                    # Check if we need to convert color space
-                    # If frame is RGB, use directly; if BGR, convert
-                    if len(frame.shape) == 3 and frame.shape[2] == 3:
-                        # Try to detect if colors are swapped by checking if it's BGR
-                        # Convert from RGB to PIL Image directly
+                    # Convert YUV420 to RGB
+                    # YUV420 has shape (height * 1.5, width) where extra 0.5 is chroma
+                    if len(frame.shape) == 2:
+                        # YUV420 is stored as a 2D array, need to convert to RGB
+                        height = 480
+                        width = 640
+                        # Reshape and convert YUV420 to RGB
+                        yuv = frame.reshape((int(height * 1.5), width))
+                        rgb_frame = cv2.cvtColor(yuv, cv2.COLOR_YUV2RGB_I420)
+                        img = Image.fromarray(rgb_frame)
+                    elif len(frame.shape) == 3 and frame.shape[2] == 3:
+                        # Already RGB format
                         img = Image.fromarray(frame, mode='RGB')
                     else:
-                        # Grayscale or other format
+                        # Unknown format, try to use as-is
+                        logger.warning(f"Unknown frame format: {frame.shape}")
                         img = Image.fromarray(frame)
 
-                    # Rotate 90 degrees clockwise
-                    img = img.rotate(-90, expand=True)
-
-                    # Resize to fit preview area
+                    # Resize to fit preview area (no rotation needed - camera is correctly positioned)
                     max_width = 580
                     max_height = 440
                     img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)

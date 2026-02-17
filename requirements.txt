@@ -16,6 +16,7 @@ rpi-lgpio>=0.4  # GPIO backend for Raspberry Pi 5 (required for gpiozero on Pi 5
 picamera2>=0.3.12  # Camera module support (Raspberry Pi OS Bookworm+)
 Pillow>=10.0.0  # Image processing for display
 numpy>=1.24.0  # Array processing for camera frames
+opencv-python>=4.8.0  # Color space conversion (YUV to RGB)
 
 # Utilities
 python-dotenv>=1.0.0  # Environment variables
