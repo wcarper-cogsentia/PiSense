@@ -210,9 +210,10 @@ class PiSenseGUI:
                 if cameras:
                     self.camera = Picamera2(0)
                     # Configure for 640x640 video (YOLO optimized)
+                    # Using BGR888 format for correct color representation
                     video_config = self.camera.create_video_configuration(
-                        main={"size": (640, 640), "format": "RGB888"},
-                        lores={"size": (640, 480)},  # For preview
+                        main={"size": (640, 640), "format": "BGR888"},
+                        lores={"size": (640, 480), "format": "BGR888"},  # For preview
                         encode="main"
                     )
                     self.camera.configure(video_config)
@@ -310,7 +311,9 @@ class PiSenseGUI:
                         # Add trigger to queue
                         if self.camera:
                             self.trigger_queue.put(current_time)
-                            self.root.after(0, lambda: self.queued_triggers_var.set(str(self.trigger_queue.qsize())))
+                            queue_size = self.trigger_queue.qsize()
+                            self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
+                            logger.info(f"Trigger queued - queue size: {queue_size}")
 
                             # Start recording if not already recording
                             if not self.recording:
@@ -351,7 +354,9 @@ class PiSenseGUI:
             # Process queue - get first trigger
             if not self.trigger_queue.empty():
                 self.trigger_queue.get()
-                self.root.after(0, lambda: self.queued_triggers_var.set(str(self.trigger_queue.qsize())))
+                queue_size = self.trigger_queue.qsize()
+                self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
+                logger.info(f"Processing trigger from queue - remaining: {queue_size}")
 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             self.current_video_file = VIDEOS_DIR / f"video_{timestamp}.h264"
@@ -384,7 +389,9 @@ class PiSenseGUI:
             # Process trigger from queue
             if not self.trigger_queue.empty():
                 self.trigger_queue.get()
-                self.root.after(0, lambda: self.queued_triggers_var.set(str(self.trigger_queue.qsize())))
+                queue_size = self.trigger_queue.qsize()
+                self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
+                logger.info(f"Processing trigger from queue - remaining: {queue_size}")
 
             # Add 1 minute to recording time
             new_end_time = self.recording_end_time + RECORDING_DURATION
@@ -417,15 +424,19 @@ class PiSenseGUI:
             self.recording_start_time = 0
             self.recording_end_time = 0
 
-            # Clear remaining triggers in queue
-            while not self.trigger_queue.empty():
-                self.trigger_queue.get()
+            # Check if there are more triggers to process
+            queue_size = self.trigger_queue.qsize()
 
             self.root.after(0, lambda: self.recording_time_var.set("0:00"))
-            self.root.after(0, lambda: self.queued_triggers_var.set("0"))
+            self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
             self.root.after(0, self.update_capture_count)
 
             logger.info(f"Recording saved: {self.current_video_file}")
+
+            # If there are more triggers in queue, start a new recording
+            if queue_size > 0:
+                logger.info(f"Starting new recording for queued triggers ({queue_size} remaining)")
+                threading.Thread(target=self.start_recording, daemon=True).start()
 
         except Exception as e:
             logger.error(f"Failed to stop recording: {e}")
@@ -435,7 +446,9 @@ class PiSenseGUI:
         if self.camera and self.monitoring:
             current_time = time.time()
             self.trigger_queue.put(current_time)
-            self.root.after(0, lambda: self.queued_triggers_var.set(str(self.trigger_queue.qsize())))
+            queue_size = self.trigger_queue.qsize()
+            self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
+            logger.info(f"Manual trigger - queue size: {queue_size}")
 
             if not self.recording:
                 threading.Thread(target=self.start_recording, daemon=True).start()
@@ -450,8 +463,11 @@ class PiSenseGUI:
                     # Capture preview frame
                     frame = self.camera.capture_array()
 
+                    # Convert BGR to RGB for PIL
+                    frame_rgb = frame[:, :, ::-1]  # Reverse the color channels (BGR -> RGB)
+
                     # Convert to PIL Image
-                    img = Image.fromarray(frame)
+                    img = Image.fromarray(frame_rgb)
 
                     # Rotate 90 degrees clockwise
                     img = img.rotate(-90, expand=True)
