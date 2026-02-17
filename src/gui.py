@@ -171,9 +171,9 @@ class PiSenseGUI:
                                        state=tk.DISABLED)
         self.capture_button.pack(fill=tk.X, pady=2)
 
-        # Delete Images Button
+        # Delete All Videos/Images Button
         delete_button = tk.Button(button_frame, text="Delete All",
-                                  command=self.delete_all_images,
+                                  command=self.delete_all_files,
                                   bg="#f44336", fg="white",
                                   font=('Arial', 12, 'bold'),
                                   height=2)
@@ -210,15 +210,16 @@ class PiSenseGUI:
                 if cameras:
                     self.camera = Picamera2(0)
                     # Configure for 640x640 video (YOLO optimized)
-                    # Main stream for recording, lores for preview
+                    # Use RGB888 for both main and lores streams
                     video_config = self.camera.create_video_configuration(
-                        main={"size": (640, 640)},
-                        lores={"size": (640, 480)},
+                        main={"size": (640, 640), "format": "RGB888"},
+                        lores={"size": (640, 480), "format": "RGB888"},
                         encode="main"
                     )
                     self.camera.configure(video_config)
                     self.camera.start()
                     logger.info("Camera ready for video recording (640x640)")
+                    logger.info(f"Camera configuration: {self.camera.camera_configuration()}")
                 else:
                     messagebox.showwarning("Camera Warning",
                                          "No camera detected. Running in GPIO-only mode.")
@@ -335,9 +336,13 @@ class PiSenseGUI:
                     secs = int(elapsed % 60)
                     self.root.after(0, lambda m=mins, s=secs: self.recording_time_var.set(f"{m}:{s:02d}"))
 
+                    # Debug logging every 10 seconds
+                    if int(elapsed) % 10 == 0 and int(elapsed) > 0:
+                        logger.debug(f"Recording status - elapsed: {elapsed:.1f}s, end_time: {self.recording_end_time}, current_time: {current_time}, remaining: {remaining:.1f}s")
+
                     # Check if recording should stop
                     if current_time >= self.recording_end_time:
-                        logger.info(f"Recording time expired - stopping (elapsed: {elapsed:.1f}s)")
+                        logger.info(f"Recording time expired - stopping (elapsed: {elapsed:.1f}s, end_time: {self.recording_end_time}, current_time: {current_time})")
                         self.stop_recording()
 
                 time.sleep(0.01)  # 10ms polling interval
@@ -375,7 +380,8 @@ class PiSenseGUI:
             self.recording_start_time = time.time()
             self.recording_end_time = self.recording_start_time + RECORDING_DURATION
 
-            logger.info(f"Recording started - duration: {RECORDING_DURATION}s, will end at: {time.strftime('%H:%M:%S', time.localtime(self.recording_end_time))}")
+            logger.info(f"Recording started - start_time: {self.recording_start_time:.3f}, end_time: {self.recording_end_time:.3f}, duration: {RECORDING_DURATION}s")
+            logger.info(f"Recording will end at: {time.strftime('%H:%M:%S', time.localtime(self.recording_end_time))}")
 
         except Exception as e:
             logger.error(f"Failed to start recording: {e}")
@@ -415,12 +421,20 @@ class PiSenseGUI:
     def stop_recording(self):
         """Stop video recording"""
         if not self.recording:
+            logger.warning("stop_recording called but recording is False")
             return
 
         try:
-            logger.info("Stopping video recording")
-            self.camera.stop_recording()
+            logger.info(f"Stopping video recording - file: {self.current_video_file}")
 
+            # Stop the camera recording
+            if self.camera:
+                self.camera.stop_recording()
+                logger.info("Camera stop_recording() completed")
+            else:
+                logger.error("Camera is None when trying to stop recording")
+
+            # Reset recording state
             self.recording = False
             self.recording_start_time = 0
             self.recording_end_time = 0
@@ -434,6 +448,9 @@ class PiSenseGUI:
 
             logger.info(f"Recording saved: {self.current_video_file}")
 
+            # Small delay before starting next recording
+            time.sleep(0.5)
+
             # If there are more triggers in queue, start a new recording
             if queue_size > 0:
                 logger.info(f"Starting new recording for queued triggers ({queue_size} remaining)")
@@ -441,6 +458,12 @@ class PiSenseGUI:
 
         except Exception as e:
             logger.error(f"Failed to stop recording: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            # Force reset recording state on error
+            self.recording = False
+            self.recording_start_time = 0
+            self.recording_end_time = 0
 
     def manual_record(self):
         """Manually trigger a 1-minute video recording"""
@@ -526,10 +549,10 @@ class PiSenseGUI:
         except Exception as e:
             logger.error(f"Failed to update capture count: {e}")
 
-    def delete_all_images(self):
+    def delete_all_files(self):
         """Delete all videos and images"""
         result = messagebox.askyesno("Confirm Delete",
-                                     "Are you sure you want to delete all captured videos and images?")
+                                     "Are you sure you want to delete all captured videos?")
         if result:
             try:
                 # Delete videos
@@ -539,16 +562,20 @@ class PiSenseGUI:
                     video_file.unlink()
                     video_count += 1
 
-                # Delete any remaining images (if any exist)
+                # Delete any remaining images from old photo capture mode (if any exist)
                 image_files = list(VIDEOS_DIR.glob("capture_*.jpg"))
                 image_count = 0
                 for img_file in image_files:
                     img_file.unlink()
                     image_count += 1
 
+                # Clear preview
+                self.image_label.config(image="", text="No preview")
+
                 self.update_capture_count()
 
-                messagebox.showinfo("Success", f"Deleted {video_count} videos and {image_count} images")
+                total = video_count + image_count
+                messagebox.showinfo("Success", f"Deleted {total} file(s)")
                 logger.info(f"Deleted {video_count} videos and {image_count} images")
 
             except Exception as e:
