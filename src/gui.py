@@ -91,8 +91,8 @@ class PiSenseGUI:
         title.pack(pady=5)
 
         # Status Frame - Compact
-        status_frame = ttk.LabelFrame(left_panel, text="Status", padding="5")
-        status_frame.pack(fill=tk.X, pady=5)
+        status_frame = ttk.LabelFrame(left_panel, text="Status", padding="3")
+        status_frame.pack(fill=tk.X, pady=3)
 
         # Status grid - more compact
         ttk.Label(status_frame, text="Status:", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W)
@@ -119,15 +119,15 @@ class PiSenseGUI:
                  font=('Arial', 9)).grid(row=4, column=1, sticky=tk.W, padx=5)
 
         # Settings Frame - Adjustable parameters
-        settings_frame = ttk.LabelFrame(left_panel, text="Settings", padding="5")
-        settings_frame.pack(fill=tk.X, pady=5)
+        settings_frame = ttk.LabelFrame(left_panel, text="Settings", padding="3")
+        settings_frame.pack(fill=tk.X, pady=3)
 
         # Debounce time setting (in milliseconds)
-        ttk.Label(settings_frame, text="Debounce (ms):", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W, pady=3)
+        ttk.Label(settings_frame, text="Debounce (ms):", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W, pady=1)
         self.debounce_var = tk.IntVar(value=int(BOUNCE_TIME * 1000))
 
         debounce_control = ttk.Frame(settings_frame)
-        debounce_control.grid(row=0, column=1, sticky=tk.W, padx=5, pady=3)
+        debounce_control.grid(row=0, column=1, sticky=tk.W, padx=5, pady=1)
 
         tk.Button(debounce_control, text="-", font=('Arial', 14, 'bold'),
                  width=2, command=lambda: self.adjust_debounce(-10)).pack(side=tk.LEFT, padx=1)
@@ -137,11 +137,11 @@ class PiSenseGUI:
                  width=2, command=lambda: self.adjust_debounce(10)).pack(side=tk.LEFT, padx=1)
 
         # Max recording time setting (in minutes)
-        ttk.Label(settings_frame, text="Max Rec (min):", font=('Arial', 9)).grid(row=1, column=0, sticky=tk.W, pady=3)
+        ttk.Label(settings_frame, text="Max Rec (min):", font=('Arial', 9)).grid(row=1, column=0, sticky=tk.W, pady=1)
         self.max_recording_var = tk.IntVar(value=int(MAX_RECORDING_DURATION / 60))
 
         max_rec_control = ttk.Frame(settings_frame)
-        max_rec_control.grid(row=1, column=1, sticky=tk.W, padx=5, pady=3)
+        max_rec_control.grid(row=1, column=1, sticky=tk.W, padx=5, pady=1)
 
         tk.Button(max_rec_control, text="-", font=('Arial', 14, 'bold'),
                  width=2, command=lambda: self.adjust_max_recording(-1)).pack(side=tk.LEFT, padx=1)
@@ -152,32 +152,32 @@ class PiSenseGUI:
 
         # Control Buttons Frame - Vertical stack
         button_frame = ttk.Frame(left_panel)
-        button_frame.pack(fill=tk.X, pady=5)
+        button_frame.pack(fill=tk.X, pady=3)
 
         # Start/Stop Button
         self.start_button = tk.Button(button_frame, text="Start",
                                       command=self.toggle_monitoring,
                                       bg="#4CAF50", fg="white",
-                                      font=('Arial', 12, 'bold'),
+                                      font=('Arial', 11, 'bold'),
                                       height=2)
-        self.start_button.pack(fill=tk.X, pady=2)
+        self.start_button.pack(fill=tk.X, pady=1)
 
         # Manual Record Button
         self.capture_button = tk.Button(button_frame, text="Record Video",
                                        command=self.manual_record,
                                        bg="#2196F3", fg="white",
-                                       font=('Arial', 12, 'bold'),
+                                       font=('Arial', 11, 'bold'),
                                        height=2,
                                        state=tk.DISABLED)
-        self.capture_button.pack(fill=tk.X, pady=2)
+        self.capture_button.pack(fill=tk.X, pady=1)
 
         # Delete All Videos/Images Button
         delete_button = tk.Button(button_frame, text="Delete All",
                                   command=self.delete_all_files,
                                   bg="#f44336", fg="white",
-                                  font=('Arial', 12, 'bold'),
+                                  font=('Arial', 11, 'bold'),
                                   height=2)
-        delete_button.pack(fill=tk.X, pady=2)
+        delete_button.pack(fill=tk.X, pady=1)
 
         # Right Panel - Image preview (takes most of the space)
         preview_frame = ttk.LabelFrame(main_frame, text="Camera View", padding="5")
