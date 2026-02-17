@@ -61,6 +61,7 @@ class PiSenseGUI:
         self.current_video_file = None
         self.encoder = None
         self.preview_update_thread = None
+        self._recording_lock = threading.Lock()
 
         # GUI variables
         self.status_var = tk.StringVar(value="Stopped")
@@ -325,8 +326,9 @@ class PiSenseGUI:
 
                 # Check for state change with debouncing
                 if current_state != last_state and (current_time - last_trigger_time) >= debounce_time:
-                    if current_state:
-                        logger.info(f"GPIO Pin {PIN} changed to HIGH - Trigger detected")
+                    if not current_state:
+                        # Falling edge (HIGH -> LOW) = sensor triggered
+                        logger.info(f"GPIO Pin {PIN} changed to LOW - Trigger detected (falling edge)")
 
                         # Add trigger to queue
                         if self.camera:
@@ -342,7 +344,7 @@ class PiSenseGUI:
                                 # Extend recording time
                                 self.extend_recording()
                     else:
-                        logger.info(f"GPIO Pin {PIN} changed to LOW")
+                        logger.info(f"GPIO Pin {PIN} changed to HIGH")
 
                     last_state = current_state
                     last_trigger_time = current_time
@@ -355,9 +357,10 @@ class PiSenseGUI:
                     secs = int(elapsed % 60)
                     self.root.after(0, lambda m=mins, s=secs: self.recording_time_var.set(f"{m}:{s:02d}"))
 
-                    # Debug logging every 10 seconds
-                    if int(elapsed) % 10 == 0 and int(elapsed) > 0:
-                        logger.debug(f"Recording status - elapsed: {elapsed:.1f}s, end_time: {self.recording_end_time}, current_time: {current_time}, remaining: {remaining:.1f}s")
+                    # Status logging every 10 seconds
+                    if int(elapsed) % 10 == 0 and int(elapsed) > 0 and int(elapsed) != getattr(self, '_last_log_elapsed', -1):
+                        self._last_log_elapsed = int(elapsed)
+                        logger.info(f"Recording status - elapsed: {elapsed:.1f}s, remaining: {remaining:.1f}s, end_time: {time.strftime('%H:%M:%S', time.localtime(self.recording_end_time))}")
 
                     # Check if recording should stop
                     if current_time >= self.recording_end_time:
@@ -372,8 +375,10 @@ class PiSenseGUI:
 
     def start_recording(self):
         """Start video recording"""
-        if not self.camera or self.recording:
-            return
+        with self._recording_lock:
+            if not self.camera or self.recording:
+                return
+            self.recording = True  # Set immediately under lock to block re-entry
 
         try:
             # Process queue - get first trigger
@@ -394,8 +399,7 @@ class PiSenseGUI:
             # Start recording
             self.camera.start_recording(self.encoder, str(self.current_video_file))
 
-            # Set recording state
-            self.recording = True
+            # Set recording timestamps (self.recording already set to True under lock)
             self.recording_start_time = time.time()
             self.recording_end_time = self.recording_start_time + RECORDING_DURATION
 
@@ -405,6 +409,8 @@ class PiSenseGUI:
         except Exception as e:
             logger.error(f"Failed to start recording: {e}")
             self.recording = False
+            self.recording_start_time = 0
+            self.recording_end_time = 0
 
     def extend_recording(self):
         """Extend recording time by processing trigger from queue"""
