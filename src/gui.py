@@ -330,18 +330,18 @@ class PiSenseGUI:
                         # Falling edge (HIGH -> LOW) = sensor triggered
                         logger.info(f"GPIO Pin {PIN} changed to LOW - Trigger detected (falling edge)")
 
-                        # Add trigger to queue
+                        # Handle trigger
                         if self.camera:
-                            self.trigger_queue.put(current_time)
-                            queue_size = self.trigger_queue.qsize()
-                            self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
-                            logger.info(f"Trigger queued - queue size: {queue_size}")
-
-                            # Start recording if not already recording
                             if not self.recording:
+                                # Not recording - queue the trigger and start recording
+                                self.trigger_queue.put(current_time)
+                                queue_size = self.trigger_queue.qsize()
+                                self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
+                                logger.info(f"Trigger queued - queue size: {queue_size}")
                                 threading.Thread(target=self.start_recording, daemon=True).start()
                             else:
-                                # Extend recording time
+                                # Already recording - extend directly, no need to queue
+                                logger.info("Trigger during recording - extending")
                                 self.extend_recording()
                     else:
                         logger.info(f"GPIO Pin {PIN} changed to HIGH")
@@ -381,12 +381,12 @@ class PiSenseGUI:
             self.recording = True  # Set immediately under lock to block re-entry
 
         try:
-            # Process queue - get first trigger
+            # Consume the trigger that started this recording
             if not self.trigger_queue.empty():
                 self.trigger_queue.get()
-                queue_size = self.trigger_queue.qsize()
-                self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
-                logger.info(f"Processing trigger from queue - remaining: {queue_size}")
+            queue_size = self.trigger_queue.qsize()
+            self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
+            logger.info(f"Starting recording - consumed trigger, {queue_size} remaining in queue")
 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             self.current_video_file = VIDEOS_DIR / f"video_{timestamp}.h264"
@@ -413,18 +413,11 @@ class PiSenseGUI:
             self.recording_end_time = 0
 
     def extend_recording(self):
-        """Extend recording time by processing trigger from queue"""
+        """Extend recording time by 1 minute on new trigger"""
         if not self.recording:
             return
 
         try:
-            # Process trigger from queue
-            if not self.trigger_queue.empty():
-                self.trigger_queue.get()
-                queue_size = self.trigger_queue.qsize()
-                self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
-                logger.info(f"Processing trigger from queue - remaining: {queue_size}")
-
             # Add 1 minute to recording time
             new_end_time = self.recording_end_time + RECORDING_DURATION
 
@@ -494,14 +487,16 @@ class PiSenseGUI:
         """Manually trigger a 1-minute video recording"""
         if self.camera and self.monitoring:
             current_time = time.time()
-            self.trigger_queue.put(current_time)
-            queue_size = self.trigger_queue.qsize()
-            self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
-            logger.info(f"Manual trigger - queue size: {queue_size}")
-
             if not self.recording:
+                # Queue trigger and start recording
+                self.trigger_queue.put(current_time)
+                queue_size = self.trigger_queue.qsize()
+                self.root.after(0, lambda size=queue_size: self.queued_triggers_var.set(str(size)))
+                logger.info(f"Manual trigger queued - queue size: {queue_size}")
                 threading.Thread(target=self.start_recording, daemon=True).start()
             else:
+                # Already recording - extend directly
+                logger.info("Manual trigger during recording - extending")
                 self.extend_recording()
 
     def update_preview_loop(self):
