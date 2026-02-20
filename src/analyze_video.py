@@ -4,15 +4,20 @@ Analyze a recorded video for cardboard box counting.
 Usage:
     python src/analyze_video.py videos/video_20250218_120000.h264
     python src/analyze_video.py videos/video_20250218_120000.h264 --show
-    python src/analyze_video.py videos/video_20250218_120000.h264 --line 0.6
+    python src/analyze_video.py videos/video_20250218_120000.h264 --vline 0.5
+    python src/analyze_video.py videos/video_20250218_120000.h264 --hline 0.6
 
 Arguments:
     video_path      Path to .h264 or .mp4 video file
-    --line FLOAT    Horizontal counting line position as fraction of frame height
-                    (default: 0.5 = middle of frame). Adjust based on camera angle.
+    --vline FLOAT   Vertical counting line position as fraction of frame width
+                    (default: 0.5 = middle). Use for boxes moving left-to-right.
+    --hline FLOAT   Horizontal counting line position as fraction of frame height
+                    (default: None). Use for boxes moving top-to-bottom.
     --conf FLOAT    Detection confidence threshold (default: 0.4)
     --show          Display annotated video while processing (requires display)
     --no-cleanup    Keep the temporary .mp4 file after processing
+
+Note: If neither --vline nor --hline is specified, defaults to vertical line at 0.5
 """
 
 import sys
@@ -54,14 +59,15 @@ def remux_to_mp4(h264_path: Path) -> Path:
     return mp4_path
 
 
-def analyze_video(video_path: Path, line_fraction: float = 0.5,
+def analyze_video(video_path: Path, vline: float = None, hline: float = None,
                   conf: float = 0.4, show: bool = False) -> dict:
     """
     Run box detection and counting on a video file.
 
     Args:
         video_path:     Path to .mp4 video file
-        line_fraction:  Counting line Y position as fraction of frame height (0.0=top, 1.0=bottom)
+        vline:          Vertical counting line X position as fraction of frame width (0.0=left, 1.0=right)
+        hline:          Horizontal counting line Y position as fraction of frame height (0.0=top, 1.0=bottom)
         conf:           Detection confidence threshold
         show:           Display annotated frames while processing
 
@@ -83,11 +89,21 @@ def analyze_video(video_path: Path, line_fraction: float = 0.5,
     fps          = cap.get(cv2.CAP_PROP_FPS) or 25.0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Counting line Y coordinate
-    line_y = int(frame_height * line_fraction)
+    # Default to vertical line if neither specified
+    if vline is None and hline is None:
+        vline = 0.5
 
-    logger.info(f"Video: {frame_width}x{frame_height} @ {fps:.1f}fps, {total_frames} frames")
-    logger.info(f"Counting line at Y={line_y} ({line_fraction*100:.0f}% from top)")
+    # Determine counting line coordinates
+    if vline is not None:
+        line_x = int(frame_width * vline)
+        line_type = "vertical"
+        logger.info(f"Video: {frame_width}x{frame_height} @ {fps:.1f}fps, {total_frames} frames")
+        logger.info(f"Counting line: vertical at X={line_x} ({vline*100:.0f}% from left)")
+    else:
+        line_y = int(frame_height * hline)
+        line_type = "horizontal"
+        logger.info(f"Video: {frame_width}x{frame_height} @ {fps:.1f}fps, {total_frames} frames")
+        logger.info(f"Counting line: horizontal at Y={line_y} ({hline*100:.0f}% from top)")
 
     # Tracking state
     counted_ids = set()       # IDs that have already crossed the line
@@ -133,19 +149,32 @@ def analyze_video(video_path: Path, line_fraction: float = 0.5,
                 cv2.circle(frame, (cx, cy), 4, color, -1)
 
                 # Line crossing detection
-                # Count when centroid crosses from above the line to below (or vice versa)
-                if track_id in prev_centroids:
-                    prev_cy = prev_centroids[track_id]
-                    crossed = (prev_cy < line_y <= cy) or (prev_cy > line_y >= cy)
-                    if crossed and track_id not in counted_ids:
-                        counted_ids.add(track_id)
-                        box_count += 1
-                        logger.info(f"Frame {frame_num}: Box ID {track_id} crossed line - count: {box_count}")
-
-                prev_centroids[track_id] = cy
+                if line_type == "vertical":
+                    # Boxes moving left-to-right: check if centroid crosses vertical line
+                    if track_id in prev_centroids:
+                        prev_cx = prev_centroids[track_id]
+                        crossed = (prev_cx < line_x <= cx) or (prev_cx > line_x >= cx)
+                        if crossed and track_id not in counted_ids:
+                            counted_ids.add(track_id)
+                            box_count += 1
+                            logger.info(f"Frame {frame_num}: Box ID {track_id} crossed line - count: {box_count}")
+                    prev_centroids[track_id] = cx
+                else:
+                    # Boxes moving top-to-bottom: check if centroid crosses horizontal line
+                    if track_id in prev_centroids:
+                        prev_cy = prev_centroids[track_id]
+                        crossed = (prev_cy < line_y <= cy) or (prev_cy > line_y >= cy)
+                        if crossed and track_id not in counted_ids:
+                            counted_ids.add(track_id)
+                            box_count += 1
+                            logger.info(f"Frame {frame_num}: Box ID {track_id} crossed line - count: {box_count}")
+                    prev_centroids[track_id] = cy
 
         # Draw counting line and count on frame
-        cv2.line(frame, (0, line_y), (frame_width, line_y), (0, 0, 255), 2)
+        if line_type == "vertical":
+            cv2.line(frame, (line_x, 0), (line_x, frame_height), (0, 0, 255), 2)
+        else:
+            cv2.line(frame, (0, line_y), (frame_width, line_y), (0, 0, 255), 2)
         cv2.putText(frame, f"Boxes counted: {box_count}",
                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
         cv2.putText(frame, f"Frame: {frame_num}/{total_frames}",
@@ -181,7 +210,8 @@ def analyze_video(video_path: Path, line_fraction: float = 0.5,
         "frames_processed": frame_num,
         "processing_time_seconds": round(elapsed, 1),
         "processing_fps": round(fps_proc, 1),
-        "line_position": line_fraction,
+        "line_type": line_type,
+        "line_position": vline if line_type == "vertical" else hline,
         "confidence_threshold": conf,
         "model": str(MODEL_PATH),
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -191,8 +221,10 @@ def analyze_video(video_path: Path, line_fraction: float = 0.5,
 def main():
     parser = argparse.ArgumentParser(description="Count cardboard boxes in a recorded video")
     parser.add_argument("video_path", help="Path to .h264 or .mp4 video file")
-    parser.add_argument("--line", type=float, default=0.5,
-                        help="Counting line position as fraction of frame height (default: 0.5)")
+    parser.add_argument("--vline", type=float, default=None,
+                        help="Vertical counting line position as fraction of frame width (0.0=left, 1.0=right)")
+    parser.add_argument("--hline", type=float, default=None,
+                        help="Horizontal counting line position as fraction of frame height (0.0=top, 1.0=bottom)")
     parser.add_argument("--conf", type=float, default=0.4,
                         help="Detection confidence threshold (default: 0.4)")
     parser.add_argument("--show", action="store_true",
@@ -223,7 +255,8 @@ def main():
     try:
         results = analyze_video(
             mp4_path,
-            line_fraction=args.line,
+            vline=args.vline,
+            hline=args.hline,
             conf=args.conf,
             show=args.show
         )
