@@ -29,7 +29,7 @@ from ultralytics import YOLO
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 MODEL_PATH = PROJECT_ROOT / "models" / "trained" / "box_detector" / "weights" / "best.pt"
-VIDEOS_DIR = PROJECT_ROOT / "videos"
+VIDEOS_DIR = Path("/home/wcarper/videos")
 OUTPUT_DIR = PROJECT_ROOT / "training_data" / "extracted_frames"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
